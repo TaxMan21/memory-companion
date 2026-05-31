@@ -11,6 +11,7 @@ import memoryRoutes from './routes/memories.js';
 import aiRoutes from './routes/ai.js';
 import subscriptionRoutes from './routes/subscription.js';
 import dataRoutes from './routes/data.js';
+import featuresRoutes from './routes/features.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -65,6 +66,7 @@ app.use('/api/memories', memoryRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/data', dataRoutes);
+app.use('/api/features', featuresRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

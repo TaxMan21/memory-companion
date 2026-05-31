@@ -37,6 +37,19 @@ class ApiClient {
     return data;
   }
 
+  // Generic helpers for feature routes
+  get(endpoint) {
+    return this.request(endpoint);
+  }
+
+  put(endpoint, data) {
+    return this.request(endpoint, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  del(endpoint) {
+    return this.request(endpoint, { method: 'DELETE' });
+  }
+
   // Auth
   signup(email, password, name, tosAccepted, privacyAccepted, marketingConsent) {
     return this.request('/auth/signup', {

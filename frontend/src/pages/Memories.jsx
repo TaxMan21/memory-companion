@@ -93,7 +93,7 @@ export default function Memories() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">Memories</h1>
-          <p className="text-gray-400 mt-1">{memories.length} memories preserved</p>
+          <p className="text-gray-400 mt-1">{memories.length} memories preserved · <Link to="/memory-vault" className="text-brand-400">Open Vault</Link></p>
         </div>
         {canCreate && !showCreate && (
           <button onClick={() => setShowCreate(true)} className="btn-primary">

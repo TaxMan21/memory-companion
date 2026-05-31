@@ -32,7 +32,7 @@ export default function SignUp() {
     setLoading(true);
     try {
       await signup(form.email, form.password, form.name, form.tosAccepted, form.privacyAccepted, form.marketingConsent);
-      navigate('/dashboard');
+      navigate('/onboarding');
     } catch (err) {
       setError(err.message);
     } finally {
