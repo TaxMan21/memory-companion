@@ -1,8 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Remove crossorigin attribute from script/link tags to avoid
+// CORS requirement on same-origin static assets
+function removeCrossoriginPlugin() {
+  return {
+    name: 'remove-crossorigin',
+    transformIndexHtml(html) {
+      return html.replace(/\s+crossorigin(=["']?(anonymous|use-credentials)["']?)?/gi, '');
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), removeCrossoriginPlugin()],
   base: '/',
   build: {
     outDir: '../backend/public',

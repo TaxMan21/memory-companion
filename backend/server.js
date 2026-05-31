@@ -37,8 +37,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],  // needed for React dev
-      styleSrc: ["'self'", "'unsafe-inline'"],    // needed for Tailwind
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'", ...ALLOWED_ORIGINS],
       fontSrc: ["'self'"]
@@ -46,6 +46,7 @@ app.use(helmet({
   }
 }));
 
+// Apply CORS globally (needed for crossorigin module scripts)
 app.use(cors({
   origin: function (origin, cb) {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) {
