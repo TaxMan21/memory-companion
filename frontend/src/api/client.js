@@ -38,10 +38,10 @@ class ApiClient {
   }
 
   // Auth
-  signup(email, password, name) {
+  signup(email, password, name, tosAccepted, privacyAccepted, marketingConsent) {
     return this.request('/auth/signup', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name })
+      body: JSON.stringify({ email, password, name, tosAccepted, privacyAccepted, marketingConsent })
     });
   }
 
@@ -106,6 +106,23 @@ class ApiClient {
 
   getSubscriptionStatus() {
     return this.request('/subscription/status');
+  }
+
+  cancelSubscription() {
+    return this.request('/subscription/cancel', { method: 'POST' });
+  }
+
+  // Data & Privacy
+  exportData() {
+    return this.request('/data/export');
+  }
+
+  deleteAccount() {
+    return this.request('/data/account', { method: 'DELETE' });
+  }
+
+  requestDeletion() {
+    return this.request('/data/request-deletion', { method: 'POST' });
   }
 }
 

@@ -25,10 +25,14 @@ function generateTokens(userId) {
 
 router.post('/signup', authLimiter, (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, tosAccepted, privacyAccepted, marketingConsent } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Email, password, and name are required' });
+    }
+
+    if (!tosAccepted || !privacyAccepted) {
+      return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy' });
     }
 
     if (password.length < 8) {
@@ -51,13 +55,22 @@ router.post('/signup', authLimiter, (req, res) => {
     const id = uuidv4();
     const passwordHash = bcrypt.hashSync(password, 12);
 
+    const now = new Date().toISOString();
     db.prepare(
-      'INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)'
-    ).run(id, email, passwordHash, name);
+      'INSERT INTO users (id, email, password_hash, name, tos_accepted_at, privacy_accepted_at, marketing_consent) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, email, passwordHash, name, now, now, marketingConsent ? 1 : 0);
+
+    db.prepare(
+      'INSERT INTO consent_log (id, user_id, consent_type, granted) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)'
+    ).run(
+      uuidv4(), id, 'terms_of_service', 1,
+      uuidv4(), id, 'privacy_policy', 1,
+      uuidv4(), id, 'marketing', marketingConsent ? 1 : 0
+    );
 
     const { token } = generateTokens(id);
     const user = db.prepare(
-      'SELECT id, email, name, subscription_status, demo_used, created_at FROM users WHERE id = ?'
+      'SELECT id, email, name, subscription_status, demo_used, created_at, tos_accepted_at, privacy_accepted_at FROM users WHERE id = ?'
     ).get(id);
 
     res.status(201).json({ user, token });

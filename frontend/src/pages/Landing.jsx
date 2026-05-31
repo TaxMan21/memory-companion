@@ -103,6 +103,14 @@ export default function Landing() {
             ))}
           </div>
         </div>
+
+        <footer className="max-w-5xl mx-auto mt-20 pt-8 border-t border-gray-800 flex items-center justify-between text-xs text-gray-600">
+          <span>&copy; 2026 Memory Companion</span>
+          <div className="flex gap-4">
+            <Link to="/terms" className="hover:text-gray-400 transition-colors">Terms of Service</Link>
+            <Link to="/privacy" className="hover:text-gray-400 transition-colors">Privacy Policy</Link>
+          </div>
+        </footer>
       </main>
     </div>
   );

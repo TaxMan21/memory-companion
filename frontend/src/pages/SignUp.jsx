@@ -5,7 +5,10 @@ import { useAuth } from '../context/AuthContext.jsx';
 export default function SignUp() {
   const { signup } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({
+    name: '', email: '', password: '', confirm: '',
+    tosAccepted: false, privacyAccepted: false, marketingConsent: false
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,16 +24,24 @@ export default function SignUp() {
       setError('Password must be at least 8 characters');
       return;
     }
+    if (!form.tosAccepted || !form.privacyAccepted) {
+      setError('You must accept the Terms of Service and Privacy Policy');
+      return;
+    }
 
     setLoading(true);
     try {
-      await signup(form.email, form.password, form.name);
+      await signup(form.email, form.password, form.name, form.tosAccepted, form.privacyAccepted, form.marketingConsent);
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggle = (field) => {
+    setForm(p => ({ ...p, [field]: !p[field] }));
   };
 
   return (
@@ -102,7 +113,36 @@ export default function SignUp() {
             />
           </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <div className="space-y-3 pt-2 border-t border-gray-800">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={form.tosAccepted}
+                onChange={() => toggle('tosAccepted')}
+                className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-surface-800 text-brand-500 focus:ring-brand-500"
+              />
+              <span className="text-sm text-gray-400 group-hover:text-gray-300">
+                I accept the{' '}
+                <Link to="/terms" target="_blank" className="text-brand-400 hover:text-brand-300 underline">Terms of Service</Link>
+                {' '}and{' '}
+                <Link to="/privacy" target="_blank" className="text-brand-400 hover:text-brand-300 underline">Privacy Policy</Link>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={form.marketingConsent}
+                onChange={() => toggle('marketingConsent')}
+                className="mt-0.5 h-4 w-4 rounded border-gray-600 bg-surface-800 text-brand-500 focus:ring-brand-500"
+              />
+              <span className="text-sm text-gray-400 group-hover:text-gray-300">
+                I agree to receive product updates and tips (optional)
+              </span>
+            </label>
+          </div>
+
+          <button type="submit" disabled={loading || !form.tosAccepted || !form.privacyAccepted} className="btn-primary w-full">
             {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>

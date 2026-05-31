@@ -11,11 +11,15 @@ import Memories from './pages/Memories.jsx';
 import AICompanion from './pages/AICompanion.jsx';
 import Settings from './pages/Settings.jsx';
 import Subscription from './pages/Subscription.jsx';
+import TermsOfService from './pages/TermsOfService.jsx';
+import PrivacyPolicy from './pages/PrivacyPolicy.jsx';
+import CookieConsent from './components/CookieConsent.jsx';
 
 export default function App() {
   return (
     <AuthProvider>
       <Navbar />
+      <CookieConsent />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/signin" element={<SignIn />} />
@@ -50,6 +54,8 @@ export default function App() {
             <Settings />
           </ProtectedRoute>
         } />
+        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

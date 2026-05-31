@@ -23,8 +23,8 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const signup = useCallback(async (email, password, name) => {
-    const data = await api.signup(email, password, name);
+  const signup = useCallback(async (email, password, name, tosAccepted, privacyAccepted, marketingConsent) => {
+    const data = await api.signup(email, password, name, tosAccepted, privacyAccepted, marketingConsent);
     api.setToken(data.token);
     setUser(data.user);
     return data;
