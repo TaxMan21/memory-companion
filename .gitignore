@@ -1,0 +1,12 @@
+node_modules/
+*.db
+.env
+server.log
+start.bat
+run-server.vbs
+*.log
+dist/
+
+*.db-shm
+*.db-wal
+*.db
