@@ -20,7 +20,7 @@ export function authenticateToken(req, res, next) {
     }
 
     const user = db.prepare(
-      'SELECT id, email, name, subscription_status, demo_used, created_at FROM users WHERE id = ?'
+      'SELECT id, email, name, subscription_status, payment_method, demo_used, created_at FROM users WHERE id = ?'
     ).get(decoded.userId);
 
     if (!user) {

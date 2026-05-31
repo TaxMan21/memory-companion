@@ -15,23 +15,49 @@ import dataRoutes from './routes/data.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Validate required env vars at startup
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET must be set in .env');
+  process.exit(1);
+}
+if (!process.env.FRONTEND_URL) {
+  console.error('FATAL: FRONTEND_URL must be set in .env (e.g. https://yourdomain.com)');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 initializeDatabase();
 
+const ALLOWED_ORIGINS = process.env.FRONTEND_URL.split(',').map(s => s.trim());
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],  // needed for React dev
+      styleSrc: ["'self'", "'unsafe-inline'"],    // needed for Tailwind
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", ...ALLOWED_ORIGINS],
+      fontSrc: ["'self'"]
+    }
+  }
 }));
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || true,
+  origin: function (origin, cb) {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
-app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '100kb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/memories', memoryRoutes);

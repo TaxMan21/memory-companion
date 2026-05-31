@@ -47,12 +47,33 @@ export default function SignUp() {
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="w-full max-w-md animate-fade-in">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <Link to="/" className="text-2xl font-bold bg-gradient-to-r from-brand-400 to-brand-600 bg-clip-text text-transparent">
             Memory Companion
           </Link>
           <h1 className="text-2xl font-bold mt-6 mb-2">Create your account</h1>
           <p className="text-gray-400">Start your memory journey today</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="rounded-xl border border-gray-800 bg-surface-800/50 p-4 text-center">
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Free Trial</p>
+            <p className="text-2xl font-bold">$0</p>
+            <ul className="mt-2 space-y-1 text-xs text-gray-400">
+              <li>✓ 5 memories</li>
+              <li>✓ Demo access</li>
+            </ul>
+          </div>
+          <div className="rounded-xl border border-brand-500/30 bg-brand-600/10 p-4 text-center relative">
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-brand-600 rounded-full text-[10px] font-semibold">Premium</div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1 mt-1">Unlimited</p>
+            <p className="text-2xl font-bold">$9<span className="text-sm text-gray-400">/mo</span></p>
+            <ul className="mt-2 space-y-1 text-xs text-gray-400">
+              <li>✓ Unlimited memories</li>
+              <li>✓ AI Companion</li>
+              <li>✓ Insights & patterns</li>
+            </ul>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="card space-y-4">

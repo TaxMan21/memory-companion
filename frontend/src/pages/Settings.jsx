@@ -84,6 +84,14 @@ export default function Settings() {
                   {user.subscription_status === 'active' ? 'Active' : user.subscription_status === 'trial' ? 'Free Trial' : user.subscription_status}
                 </span>
               </p>
+              {user.payment_method && user.subscription_status === 'active' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Payment: {user.payment_method === 'paypal' ? 'PayPal / Card' :
+                    user.payment_method === 'wallet' ? 'Direct Wallet (Solana)' :
+                    user.payment_method === 'dev_free' ? 'Dev Mode (Free)' :
+                    user.payment_method}
+                </p>
+              )}
               {user.subscription_status === 'trial' && (
                 <p className="text-sm text-gray-400 mt-1">Upgrade to Premium for unlimited memories and AI features</p>
               )}

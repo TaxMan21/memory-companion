@@ -53,13 +53,6 @@ router.get('/:id', authenticateToken, apiLimiter, (req, res) => {
 
 router.post('/', authenticateToken, apiLimiter, (req, res) => {
   try {
-    if (!canCreateMemory(req.user)) {
-      return res.status(403).json({
-        error: 'Trial limit reached. Subscribe to create unlimited memories.',
-        code: 'MEMORY_LIMIT_REACHED'
-      });
-    }
-
     const { title, content, mood, tags } = req.body;
 
     if (!title || !title.trim()) {
@@ -75,19 +68,36 @@ router.post('/', authenticateToken, apiLimiter, (req, res) => {
       return res.status(400).json({ error: 'Content must be under 10000 characters' });
     }
 
-    const id = uuidv4();
-    const tagsJson = JSON.stringify(tags || []);
+    // Check + insert in a transaction to prevent TOCTOU race
+    const insert = db.transaction(() => {
+      if (req.user.subscription_status !== 'active') {
+        const count = db.prepare(
+          'SELECT COUNT(*) as count FROM memories WHERE user_id = ?'
+        ).get(req.user.id).count;
+        if (count >= MAX_TRIAL_MEMORIES) {
+          return { error: 'Trial limit reached. Subscribe to create unlimited memories.', code: 'MEMORY_LIMIT_REACHED' };
+        }
+      }
 
-    db.prepare(
-      'INSERT INTO memories (id, user_id, title, content, mood, tags) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(id, req.user.id, title.trim(), content.trim(), mood || null, tagsJson);
+      const id = uuidv4();
+      const tagsJson = JSON.stringify(tags || []);
 
-    const memory = db.prepare(
-      'SELECT id, title, content, mood, tags, created_at, updated_at FROM memories WHERE id = ?'
-    ).get(id);
-    memory.tags = JSON.parse(memory.tags || '[]');
+      db.prepare(
+        'INSERT INTO memories (id, user_id, title, content, mood, tags) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(id, req.user.id, title.trim(), content.trim(), mood || null, tagsJson);
 
-    res.status(201).json({ memory });
+      const memory = db.prepare(
+        'SELECT id, title, content, mood, tags, created_at, updated_at FROM memories WHERE id = ?'
+      ).get(id);
+      memory.tags = JSON.parse(memory.tags || '[]');
+      return { memory };
+    });
+
+    const result = insert();
+    if (result.error) {
+      return res.status(403).json({ error: result.error, code: result.code });
+    }
+    res.status(201).json({ memory: result.memory });
   } catch (err) {
     console.error('Create memory error:', err);
     res.status(500).json({ error: 'Failed to create memory' });

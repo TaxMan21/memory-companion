@@ -100,8 +100,31 @@ class ApiClient {
   }
 
   // Subscription
-  createCheckout() {
-    return this.request('/subscription/create-checkout', { method: 'POST' });
+  getPaymentMethods() {
+    return this.request('/subscription/payment-methods');
+  }
+
+  createPaypalOrder() {
+    return this.request('/subscription/paypal-create-order', { method: 'POST' });
+  }
+
+  verifyPaypalPayment() {
+    return this.request('/subscription/paypal-verify', { method: 'POST' });
+  }
+
+  initiateWalletPayment() {
+    return this.request('/subscription/wallet-payment', { method: 'POST' });
+  }
+
+  verifyWalletPayment(txSignature) {
+    return this.request('/subscription/verify-wallet-payment', {
+      method: 'POST',
+      body: JSON.stringify({ txSignature })
+    });
+  }
+
+  activateDevFree() {
+    return this.request('/subscription/activate-dev', { method: 'POST' });
   }
 
   getSubscriptionStatus() {

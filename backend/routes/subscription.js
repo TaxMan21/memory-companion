@@ -1,149 +1,211 @@
 import { Router } from 'express';
-import Stripe from 'stripe';
+import crypto from 'crypto';
 import db from '../db/database.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { apiLimiter } from '../middleware/rateLimit.js';
+import { getPaymentInfo, generatePaymentRef } from '../services/crypto.js';
+import { createOrder, isConfigured as paypalConfigured } from '../services/paypal.js';
 
 const router = Router();
 
-function getStripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key || key === 'sk_test_placeholder') return null;
-  return new Stripe(key);
-}
+// ─── Available payment methods ──────────────────────────
+router.get('/payment-methods', authenticateToken, async (req, res) => {
+  const methods = [];
 
-// Creates a Stripe Checkout Session — funds go directly to YOUR Stripe account,
-// which you payout to your bank. Set payout schedule in Stripe Dashboard.
-router.post('/create-checkout', authenticateToken, apiLimiter, async (req, res) => {
+  const paypalOk = await paypalConfigured();
+  if (paypalOk) {
+    methods.push({
+      id: 'paypal',
+      name: 'PayPal / Credit Card',
+      provider: 'PayPal',
+      fee: '~2.9% + fixed fee',
+      icon: 'paypal'
+    });
+  }
+
+  const cryptoInfo = getPaymentInfo();
+  if (cryptoInfo.configured) {
+    methods.push({
+      id: 'direct-wallet',
+      name: 'Direct Wallet Transfer (SOL/USDC)',
+      provider: 'Self-Custodial (Solana)',
+      fee: '0% — free, direct to wallet',
+      icon: 'wallet',
+      supports: ['SOL', 'USDC'],
+      walletAddress: cryptoInfo.address,
+      priceSOL: cryptoInfo.priceSOL,
+      priceUSDC: cryptoInfo.priceUSDC
+    });
+  }
+
+  methods.push({
+    id: 'dev-free',
+    name: 'Activate Free (Dev Mode)',
+    provider: 'Development',
+    fee: 'Free',
+    icon: 'dev'
+  });
+
+  res.json({ methods, default: 'paypal' });
+});
+
+// ─── 1. PayPal — Redirect to Payment Link ────────────────
+router.post('/paypal-create-order', authenticateToken, apiLimiter, async (req, res) => {
   try {
-    const stripe = getStripe();
-    if (!stripe) {
+    const order = createOrder();
+    if (!order || !order.url) {
+      return res.status(500).json({ error: 'Failed to create PayPal order' });
+    }
+
+    db.prepare(
+      'UPDATE users SET paypal_order_id = ?, payment_method = ? WHERE id = ?'
+    ).run(order.id, 'paypal', req.user.id);
+
+    db.prepare(
+      `INSERT INTO payment_history (id, user_id, paypal_order_id, amount, currency, status, description)
+       VALUES (?, ?, ?, ?, 'usd', 'pending', 'PayPal redirect')`
+    ).run(crypto.randomUUID(), req.user.id, order.id, 900);
+
+    res.json({ url: order.url, orderId: order.id, success: true, method: 'paypal' });
+  } catch (err) {
+    console.error('PayPal order error:', err);
+    res.status(500).json({ error: 'Failed to process PayPal' });
+  }
+});
+
+// ─── 2. PayPal — Verify Payment (manual confirmation) ────
+router.post('/paypal-verify', authenticateToken, apiLimiter, (req, res) => {
+  const pending = db.prepare(
+    `SELECT id FROM payment_history WHERE user_id = ? AND status = 'pending' AND paypal_order_id IS NOT NULL`
+  ).get(req.user.id);
+
+  if (!pending) {
+    return res.status(400).json({ error: 'No pending PayPal payment found. Start a new payment first.' });
+  }
+
+  db.prepare(
+    "UPDATE users SET subscription_status = 'active', subscription_id = ?, payment_method = 'paypal' WHERE id = ?"
+  ).run('paypal-' + Date.now(), req.user.id);
+
+  db.prepare(
+    `UPDATE payment_history SET status = 'completed' WHERE id = ?`
+  ).run(pending.id);
+
+  console.log(`PayPal subscription activated for user ${req.user.id}`);
+
+  res.json({ success: true, status: 'active', message: 'Subscription activated!' });
+});
+
+// ─── 4. Direct Wallet Payment (Self-Custodial) ──────────
+router.post('/wallet-payment', authenticateToken, apiLimiter, async (req, res) => {
+  try {
+    const cryptoInfo = getPaymentInfo();
+    if (!cryptoInfo.configured) {
+      return res.status(400).json({ error: 'Wallet not configured — set CRYPTO_WALLET_ADDRESS in .env' });
+    }
+
+    const paymentRef = generatePaymentRef();
+    db.prepare(
+      'UPDATE users SET crypto_wallet = ?, payment_method = ? WHERE id = ?'
+    ).run(paymentRef, 'wallet', req.user.id);
+
+    db.prepare(
+      `INSERT INTO payment_history (id, user_id, amount, currency, status, description)
+       VALUES (?, ?, ?, 'usd', 'pending', ?)`
+    ).run(crypto.randomUUID(), req.user.id, 900,
+      `Direct wallet payment - Reference: ${paymentRef}`);
+
+    res.json({
+      success: true,
+      method: 'direct-wallet',
+      walletAddress: cryptoInfo.address,
+      priceSOL: cryptoInfo.priceSOL,
+      priceUSDC: cryptoInfo.priceUSDC,
+      paymentRef,
+      instructions: {
+        sol: `Send exactly ${cryptoInfo.priceSOL} SOL to the address above`,
+        usdc: `Send exactly ${cryptoInfo.priceUSDC} USDC (Solana network) to the address above`,
+        reference: `Include reference "${paymentRef}" in the transaction memo for automatic verification`,
+        network: 'Solana — fast, <$0.001 fee'
+      },
+      verifyUrl: '/api/subscription/verify-wallet-payment'
+    });
+  } catch (err) {
+    console.error('Wallet payment error:', err);
+    res.status(500).json({ error: 'Failed to initiate wallet payment' });
+  }
+});
+
+// ─── 5. Verify Wallet Payment ───────────────────────────
+router.post('/verify-wallet-payment', authenticateToken, apiLimiter, async (req, res) => {
+  try {
+    const { txSignature } = req.body;
+    if (!txSignature) {
+      return res.status(400).json({ error: 'Transaction signature required' });
+    }
+
+    db.prepare(
+      "UPDATE users SET subscription_status = 'pending_verification' WHERE id = ?"
+    ).run(req.user.id);
+
+    db.prepare(
+      `UPDATE payment_history SET crypto_tx_signature = ?, status = 'verifying'
+       WHERE user_id = ? AND status = 'pending'`
+    ).run(txSignature, req.user.id);
+
+    const { checkIncomingSOL, checkIncomingUSDC } = await import('../services/crypto.js');
+    let amount = await checkIncomingSOL(txSignature) || await checkIncomingUSDC(txSignature);
+
+    if (amount && amount >= 0.04) {
       db.prepare(
-        "UPDATE users SET subscription_status = 'active', subscription_id = ? WHERE id = ?"
-      ).run('dev-free-' + Date.now(), req.user.id);
+        "UPDATE users SET subscription_status = 'active', subscription_id = ?, payment_method = 'wallet' WHERE id = ?"
+      ).run('wallet-' + txSignature.slice(0, 16), req.user.id);
+
+      db.prepare(
+        `UPDATE payment_history SET status = 'completed', amount = ? WHERE crypto_tx_signature = ?`
+      ).run(Math.round(amount * 100), txSignature);
 
       return res.json({
-        url: null,
-        message: 'Subscription activated (dev mode — set STRIPE_SECRET_KEY for real payments)',
-        success: true
+        success: true,
+        status: 'active',
+        confirmed: true,
+        amount,
+        message: `Subscription activated! Received ${amount} SOL/USDC.`
       });
     }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      line_items: [{
-        price: process.env.STRIPE_PRICE_ID,
-        quantity: 1
-      }],
-      customer_email: req.user.email,
-      success_url: `${process.env.FRONTEND_URL || 'http://localhost:4000'}/settings?subscription=success`,
-      cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:4000'}/settings?subscription=cancelled`,
-      metadata: { userId: req.user.id }
+    res.json({
+      success: true,
+      status: 'verifying',
+      confirmed: false,
+      message: 'Transaction not yet confirmed on-chain. Check back shortly.'
     });
-
-    res.json({ url: session.url, success: true });
   } catch (err) {
-    console.error('Checkout error:', err);
-    res.status(500).json({ error: 'Failed to create checkout session' });
+    console.error('Wallet verification error:', err);
+    res.status(500).json({ error: 'Verification failed' });
   }
 });
 
-// Stripe webhook — listens for subscription lifecycle events
-// REQUIRED: Set STRIPE_WEBHOOK_SECRET in .env from Stripe Dashboard
-// Endpoint: POST /api/subscription/webhook
-router.post('/webhook', async (req, res) => {
-  const stripe = getStripe();
-  if (!stripe) return res.status(200).json({ received: true });
-
-  try {
-    const sig = req.headers['stripe-signature'];
-    const payload = req.body;
-    let event;
-
-    try {
-      event = stripe.webhooks.constructEvent(
-        typeof payload === 'string' ? payload : JSON.stringify(payload),
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-    } catch (err) {
-      console.error('Webhook signature verification failed:', err.message);
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        db.prepare(
-          "UPDATE users SET subscription_status = 'active', subscription_id = ? WHERE id = ?"
-        ).run(session.subscription, session.metadata.userId);
-        console.log(`Subscription activated for user ${session.metadata.userId}`);
-        break;
-      }
-
-      case 'customer.subscription.updated': {
-        const sub = event.data.object;
-        const status = sub.status === 'active' ? 'active' : sub.status === 'past_due' ? 'past_due' : sub.status;
-        db.prepare(
-          "UPDATE users SET subscription_status = ? WHERE subscription_id = ?"
-        ).run(status, sub.id);
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        const user = db.prepare(
-          'SELECT id FROM users WHERE subscription_id = ?'
-        ).get(sub.id);
-        if (user) {
-          db.prepare(
-            "UPDATE users SET subscription_status = 'expired', subscription_id = NULL WHERE id = ?"
-          ).run(user.id);
-          console.log(`Subscription expired for user ${user.id}`);
-        }
-        break;
-      }
-
-      case 'invoice.payment_succeeded': {
-        const invoice = event.data.object;
-        if (invoice.subscription) {
-          db.prepare(
-            "UPDATE users SET subscription_status = 'active' WHERE subscription_id = ?"
-          ).run(invoice.subscription);
-        }
-        break;
-      }
-
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        if (invoice.subscription) {
-          db.prepare(
-            "UPDATE users SET subscription_status = 'past_due' WHERE subscription_id = ?"
-          ).run(invoice.subscription);
-        }
-        break;
-      }
-    }
-
-    res.json({ received: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: 'Webhook processing failed' });
+// ─── 6. Dev Free Activation (local dev only) ────────────
+router.post('/activate-dev', authenticateToken, apiLimiter, (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Dev activation not available in production' });
   }
+  db.prepare(
+    "UPDATE users SET subscription_status = 'active', subscription_id = ?, payment_method = 'dev_free' WHERE id = ?"
+  ).run('dev-free-' + Date.now(), req.user.id);
+
+  db.prepare(
+    `INSERT INTO payment_history (id, user_id, amount, currency, status, description)
+     VALUES (?, ?, 0, 'usd', 'completed', 'Dev mode free activation')`
+  ).run(crypto.randomUUID(), req.user.id);
+
+  res.json({ success: true, message: 'Subscription activated (dev mode)' });
 });
 
-// Cancel subscription
+// ─── 7. Cancel Subscription ─────────────────────────────
 router.post('/cancel', authenticateToken, apiLimiter, async (req, res) => {
   try {
-    const stripe = getStripe();
-    if (!stripe) {
-      db.prepare(
-        "UPDATE users SET subscription_status = 'cancelled', subscription_id = NULL WHERE id = ?"
-      ).run(req.user.id);
-      return res.json({ success: true });
-    }
-
     const user = db.prepare(
       'SELECT subscription_id FROM users WHERE id = ? AND subscription_id IS NOT NULL'
     ).get(req.user.id);
@@ -152,12 +214,8 @@ router.post('/cancel', authenticateToken, apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'No active subscription' });
     }
 
-    await stripe.subscriptions.update(user.subscription_id, {
-      cancel_at_period_end: true
-    });
-
     db.prepare(
-      "UPDATE users SET subscription_status = 'cancelling' WHERE id = ?"
+      "UPDATE users SET subscription_status = 'cancelled', subscription_id = NULL WHERE id = ?"
     ).run(req.user.id);
 
     res.json({ success: true });
@@ -167,14 +225,17 @@ router.post('/cancel', authenticateToken, apiLimiter, async (req, res) => {
   }
 });
 
-// Status check
+// ─── 8. Status Check ────────────────────────────────────
 router.get('/status', authenticateToken, apiLimiter, (req, res) => {
+  const user = db.prepare('SELECT subscription_status, payment_method FROM users WHERE id = ?').get(req.user.id);
   res.json({
     subscription: {
-      status: req.user.subscription_status,
-      isActive: req.user.subscription_status === 'active',
-      isTrialing: req.user.subscription_status === 'trial' || req.user.subscription_status === 'trialing',
-      isCancelled: req.user.subscription_status === 'cancelled' || req.user.subscription_status === 'expired'
+      status: user.subscription_status,
+      paymentMethod: user.payment_method,
+      isActive: user.subscription_status === 'active',
+      isTrialing: user.subscription_status === 'trial' || user.subscription_status === 'trialing',
+      isCancelled: user.subscription_status === 'cancelled' || user.subscription_status === 'expired',
+      isPending: user.subscription_status === 'pending_verification'
     }
   });
 });

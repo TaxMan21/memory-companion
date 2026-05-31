@@ -17,13 +17,18 @@ export function initializeDatabase() {
       tos_accepted_at TEXT,
       privacy_accepted_at TEXT,
       data_deletion_requested_at TEXT,
-      marketing_consent INTEGER DEFAULT 0
+      marketing_consent INTEGER DEFAULT 0,
+      payment_method TEXT DEFAULT 'paypal',
+      crypto_wallet TEXT,
+      paypal_order_id TEXT
     );
 
     CREATE TABLE IF NOT EXISTS payment_history (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
-      stripe_event_id TEXT,
+      paypal_order_id TEXT,
+      paypal_capture_id TEXT,
+      crypto_tx_signature TEXT,
       amount INTEGER,
       currency TEXT DEFAULT 'usd',
       status TEXT NOT NULL,

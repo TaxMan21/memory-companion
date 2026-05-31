@@ -38,16 +38,27 @@ router.post('/signup', authLimiter, (req, res) => {
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain an uppercase letter' });
+    }
+    if (!/[a-z]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain a lowercase letter' });
+    }
+    if (!/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must contain a digit' });
+    }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     if (name.length < 2 || name.length > 50) {
       return res.status(400).json({ error: 'Name must be between 2 and 50 characters' });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) {
       return res.status(409).json({ error: 'Email already registered' });
     }
@@ -58,7 +69,7 @@ router.post('/signup', authLimiter, (req, res) => {
     const now = new Date().toISOString();
     db.prepare(
       'INSERT INTO users (id, email, password_hash, name, tos_accepted_at, privacy_accepted_at, marketing_consent) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, email, passwordHash, name, now, now, marketingConsent ? 1 : 0);
+    ).run(id, normalizedEmail, passwordHash, name, now, now, marketingConsent ? 1 : 0);
 
     db.prepare(
       'INSERT INTO consent_log (id, user_id, consent_type, granted) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)'
@@ -70,7 +81,7 @@ router.post('/signup', authLimiter, (req, res) => {
 
     const { token } = generateTokens(id);
     const user = db.prepare(
-      'SELECT id, email, name, subscription_status, demo_used, created_at, tos_accepted_at, privacy_accepted_at FROM users WHERE id = ?'
+      'SELECT id, email, name, subscription_status, payment_method, demo_used, created_at, tos_accepted_at, privacy_accepted_at FROM users WHERE id = ?'
     ).get(id);
 
     res.status(201).json({ user, token });
@@ -88,7 +99,8 @@ router.post('/signin', authLimiter, (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -120,6 +132,7 @@ router.post('/signin', authLimiter, (req, res) => {
         email: user.email,
         name: user.name,
         subscription_status: user.subscription_status,
+        payment_method: user.payment_method,
         demo_used: user.demo_used,
         created_at: user.created_at
       },
